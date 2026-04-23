@@ -349,6 +349,31 @@ rule determine_availability_matrix:
     script:
         scripts("determine_availability_matrix.py")
 
+rule build_renewable_profiles_corres:
+    message:
+        "Building renewable profiles using CorRES for {wildcards.clusters} clusters and {wildcards.technology} technology"
+    params:
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+        renewable=config_provider("renewable"),
+    input:
+        resource_regions=lambda w: (
+            resources("regions_onshore_base_s_{clusters}.geojson")
+            if w.technology in ("onwind", "solar", "solar-hsat")
+            else resources("regions_offshore_base_s_{clusters}.geojson")
+        ),
+    output:
+        profile_corres=resources("profile_{clusters}_{technology}_corres.nc"),
+    log:
+        logs("build_renewable_profile_{clusters}_{technology}_corres.log"),
+    benchmark:
+        benchmarks("build_renewable_profile_{clusters}_{technology}_corres")
+    threads: config["atlite"].get("nprocesses", 4)
+    resources:
+        mem_mb=config["atlite"].get("nprocesses", 4) * 5000,
+    wildcard_constraints:
+        technology="(?!hydro$|offwind-dc$).*",  # Any technology other than hydro and offwind-dc
+    script:
+        scripts("build_renewable_profiles_corres.py")
 
 rule build_renewable_profiles:
     input:
@@ -362,6 +387,11 @@ rule build_renewable_profiles:
         ),
         cutout=lambda w: input_cutout(
             w, config_provider("renewable", w.technology, "cutout")(w)
+        ),
+        profile_corres=(
+            resources("profile_{clusters}_{technology}_corres.nc")
+            if config.get("corres", {}).get("activate", False)
+            else []
         ),
     output:
         profile=resources("profile_{clusters}_{technology}.nc"),
